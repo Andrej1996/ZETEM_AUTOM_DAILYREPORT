@@ -1,0 +1,763 @@
+*&---------------------------------------------------------------------*
+*& Report  ZETEM_AUTOM_DAILYREPORT
+*&
+*&---------------------------------------------------------------------*
+
+REPORT  zetem_autom_dailyreport.
+
+CONSTANTS : c_formname TYPE  tdsfname VALUE 'ZETEM_DAILY_AUTOREPORT'.
+
+TABLES: zconf_other, zconf_other_v,
+        zconf_adr_tr, zshift_group,zcrhd,
+        zaddtr_scrap, vekp, aufk, vbfa, bkpf, afru.
+
+DATA: formname TYPE  tdsfname,
+      fm_name  TYPE  rs38l_fnam.
+
+DATA: i_other   TYPE ztyconf_other WITH HEADER LINE,
+      ind_other TYPE ztyconf_other, "Individual printout
+      wa_other  LIKE zconf_autom_str.
+
+INCLUDE zavl_autdailrep.
+*********************************************************************
+****************** Selections ***************************************
+SELECT-OPTIONS: s_datum FOR sy-datum,
+                s_arbpl FOR zconf_other_v-arbpl,
+                s_pers FOR zconf_other-personel_g.
+SELECT-OPTIONS: s_shift FOR zconf_other-logrp,
+                s_aufnr FOR zconf_other_v-aufnr,
+                s_isbd  FOR zconf_other-isbd,       "@se20200730
+                s_budat FOR afru-budat,                "@se20210520
+                s_hu    FOR zconf_other-zhu MODIF ID ANL.  "@se20210513
+
+PARAMETERS : p_old RADIOBUTTON GROUP rad1 USER-COMMAND ANL,
+             p_new RADIOBUTTON GROUP rad1 DEFAULT 'X'.
+
+PARAMETERS : alv AS CHECKBOX DEFAULT ' '.
+PARAMETERS: p_vari TYPE disvariant-variant NO-DISPLAY.
+********************************************************************
+" @se20210513 >>>>
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF SCREEN-GROUP1 = 'ANL'.
+      IF p_old = ' '.
+        SCREEN-ACTIVE = 0.
+      ELSE.
+        SCREEN-ACTIVE = 1.
+      ENDIF.
+    ENDIF.
+    MODIFY SCREEN.
+  ENDLOOP.
+" <<<<
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_pers-low.
+  PERFORM sh_personel USING 'LOW'.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_pers-high.
+  PERFORM sh_personel USING 'HIGH'.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_arbpl-low.
+  PERFORM sh_arbpl USING 'LOW'.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR s_arbpl-high.
+  PERFORM sh_arbpl USING 'HIGH'.
+
+
+START-OF-SELECTION.
+  IF p_new = 'X'.
+    PERFORM get_data.
+  ELSE.
+    PERFORM get_data_old.
+  ENDIF.
+
+END-OF-SELECTION.
+  IF alv = 'X'.
+    PERFORM alv USING p_vari.
+  ELSE.
+    PERFORM print.
+  ENDIF.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_data .
+  DATA: lv_length TYPE zlength.
+  DATA : i_pcs TYPE i.
+  CLEAR: i_other, i_other[].
+
+  SELECT arbpl,
+         datum,
+         personel_g,
+         zconf_other_v~logrp,
+         zwagon_no,
+         zcard_no,
+         SUM( pcs_ok ) AS pcs_ok,
+         pc_cons_scrap,
+         i_zcust_pack_no,
+         MIN( zconf_other~isbz ) AS i_start_time,
+         MAX( zconf_other~iebz ) AS i_end_time,
+**         TO_NVARCHAR(zconf_other~iebz,'DD/MM/YYYY')
+         i_reason_scrap_cons,
+         SUM( i_breaks ) AS i_breaks,
+         AVG( i_anzma ) AS i_anzma,
+         i_name,
+         i_surname,
+         i_name2,
+         i_surname2,
+         i_name3,
+         i_surname3,
+         i_name4,
+         i_surname4,
+         i_name5,
+         i_surname5,
+         zconf_other_v~aufnr,
+         afru~budat,           "@se20210520
+*         isbd,
+*         iebd,
+         MAX( z~charg ) AS charg,
+         SUM( z~pieces ) AS quantity,
+**         zconf_other~rueck,
+**         zconf_other~rmzhl,
+         SUM( CASE WHEN pc_mf_scrap <> '0000' THEN CAST( pc_mf_scrap AS DEC ) END ) AS scrap_total,
+         SUM( CASE WHEN e1~scrap_pc <> '0000' THEN CAST( e1~scrap_pc AS DEC ) END ) AS scrap_01,
+         SUM( CASE WHEN e2~scrap_pc <> '0000' THEN CAST( e2~scrap_pc AS DEC ) END ) AS scrap_02,
+         SUM( CASE WHEN e3~scrap_pc <> '0000' THEN CAST( e3~scrap_pc AS DEC ) END ) AS scrap_3,
+         SUM( CASE WHEN e4~scrap_pc <> '0000' THEN CAST( e4~scrap_pc AS DEC ) END ) AS scrap_4,
+         SUM( CASE WHEN e5~scrap_pc <> '0000' THEN CAST( e5~scrap_pc AS DEC ) END ) AS scrap_5,
+         SUM( CASE WHEN e6~scrap_pc <> '0000' THEN CAST( e6~scrap_pc AS DEC ) END ) AS scrap_6,
+         SUM( CASE WHEN e7~scrap_pc <> '0000' THEN CAST( e7~scrap_pc AS DEC ) END ) AS scrap_7,
+         SUM( CASE WHEN e8~scrap_pc <> '0000' THEN CAST( e8~scrap_pc AS DEC ) END ) AS scrap_8,
+         SUM( CASE WHEN e9~scrap_pc <> '0000' THEN CAST( e9~scrap_pc AS DEC ) END ) AS scrap_9,
+         SUM( CASE WHEN e10~scrap_pc <> '0000' THEN CAST( e10~scrap_pc AS DEC ) END ) AS scrap_10,
+         SUM( CASE WHEN e11~scrap_pc <> '0000' THEN CAST( e11~scrap_pc AS DEC ) END ) AS scrap_11,
+         SUM( CASE WHEN e12~scrap_pc <> '0000' THEN CAST( e12~scrap_pc AS DEC ) END ) AS scrap_12,
+         SUM( CASE WHEN e13~scrap_pc <> '0000' THEN CAST( e13~scrap_pc AS DEC ) END ) AS scrap_13,
+         SUM( CASE WHEN e14~scrap_pc <> '0000' THEN CAST( e14~scrap_pc AS DEC ) END ) AS scrap_14,
+         SUM( CASE WHEN e15~scrap_pc <> '0000' THEN CAST( e15~scrap_pc AS DEC ) END ) AS scrap_15,
+         SUM( CASE WHEN e16~scrap_pc <> '0000' THEN CAST( e16~scrap_pc AS DEC ) END ) AS scrap_16,
+         SUM( CASE WHEN e17~scrap_pc <> '0000' THEN CAST( e17~scrap_pc AS DEC ) END ) AS scrap_17,
+         SUM( CASE WHEN e18~scrap_pc <> '0000' THEN CAST( e18~scrap_pc AS DEC ) END ) AS scrap_18,
+         SUM( CASE WHEN e19~scrap_pc <> '0000' THEN CAST( e19~scrap_pc AS DEC ) END ) AS scrap_test,
+         SUM( CASE WHEN e20~scrap_pc <> '0000' THEN CAST( e20~scrap_pc AS DEC ) END ) AS scrap_08,
+         zconf_other~text,
+         zconf_other~isbd,
+         zconf_other~iebd
+         FROM zconf_other
+         INNER JOIN zconf_other_v ON zconf_other_v~aufnr = zconf_other~aufnr
+                                 AND zconf_other_v~rueck = zconf_other~rueck
+                                 AND zconf_other_v~rmzhl = zconf_other~rmzhl
+         INNER JOIN afru ON afru~rueck = zconf_other~rueck              "@se20210520
+                        AND afru~rmzhl = zconf_other~rmzhl              "@se20210520
+         LEFT OUTER JOIN  zconf_adr_tr AS z ON z~aufnr = zconf_other~aufnr
+                                           AND z~rueck = zconf_other~rueck
+                                           AND z~rmzhl = zconf_other~rmzhl
+         LEFT OUTER JOIN zaddtr_scrap AS e1 ON e1~rueck = zconf_other~rueck
+                                          AND e1~rmzhl = zconf_other~rmzhl
+                                          AND e1~scrap_code = 'AD11'    "Shorter from EXTRUSION
+         LEFT OUTER JOIN zaddtr_scrap AS e2 ON e2~rueck = zconf_other~rueck
+                                          AND e2~rmzhl = zconf_other~rmzhl
+                                          AND e2~scrap_code = 'AD12'    "Longer from EXTRUSION
+         LEFT OUTER JOIN zaddtr_scrap AS e3 ON e3~rueck = zconf_other~rueck
+                                          AND e3~rmzhl = zconf_other~rmzhl
+                                          AND e3~scrap_code = 'AD01'    "BLISTERS
+         LEFT OUTER JOIN zaddtr_scrap AS e4 ON e4~rueck = zconf_other~rueck
+                                          AND e4~rmzhl = zconf_other~rmzhl
+                                          AND e4~scrap_code = 'AD02'    "BENDED
+         LEFT OUTER JOIN zaddtr_scrap AS e5 ON e5~rueck = zconf_other~rueck
+                                          AND e5~rmzhl = zconf_other~rmzhl
+                                          AND e5~scrap_code = 'AD06'    "TRANSVERSAL SCRATCH
+         LEFT OUTER JOIN zaddtr_scrap AS e6 ON e6~rueck = zconf_other~rueck
+                                          AND e6~rmzhl = zconf_other~rmzhl
+                                          AND e6~scrap_code = 'AD07'    "LONGITUDINAL SCRATCH
+         LEFT OUTER JOIN zaddtr_scrap AS e7 ON e7~rueck = zconf_other~rueck
+                                          AND e7~rmzhl = zconf_other~rmzhl
+                                          AND e7~scrap_code = 'AD08'    "TEARINGS
+         LEFT OUTER JOIN zaddtr_scrap AS e8 ON e8~rueck = zconf_other~rueck
+                                          AND e8~rmzhl = zconf_other~rmzhl
+                                          AND e8~scrap_code = 'AD09'    "DENTS
+         LEFT OUTER JOIN zaddtr_scrap AS e9 ON e9~rueck = zconf_other~rueck
+                                          AND e9~rmzhl = zconf_other~rmzhl
+                                          AND e9~scrap_code = 'AD10'    "TWISTED
+         LEFT OUTER JOIN zaddtr_scrap AS e10 ON e10~rueck = zconf_other~rueck
+                                          AND e10~rmzhl = zconf_other~rmzhl
+                                          AND e10~scrap_code = 'AD20'    "WAVES
+         LEFT OUTER JOIN zaddtr_scrap AS e11 ON e11~rueck = zconf_other~rueck
+                                          AND e11~rmzhl = zconf_other~rmzhl
+                                          AND e11~scrap_code = 'AD21'    "CROSS-SECTION/GEOMETRY
+         LEFT OUTER JOIN zaddtr_scrap AS e12 ON e12~rueck = zconf_other~rueck
+                                          AND e12~rmzhl = zconf_other~rmzhl
+                                          AND e12~scrap_code = 'AD22'    "PICK-UPS
+         LEFT OUTER JOIN zaddtr_scrap AS e13 ON e13~rueck = zconf_other~rueck
+                                          AND e13~rmzhl = zconf_other~rmzhl
+                                          AND e13~scrap_code = 'AD50'    "SHORTER FROM CUTTING
+         LEFT OUTER JOIN zaddtr_scrap AS e14 ON e14~rueck = zconf_other~rueck
+                                          AND e14~rmzhl = zconf_other~rmzhl
+                                          AND e14~scrap_code = 'AD51'    "LONGER FROM CUTTING
+         LEFT OUTER JOIN zaddtr_scrap AS e15 ON e15~rueck = zconf_other~rueck
+                                          AND e15~rmzhl = zconf_other~rmzhl
+                                          AND e15~scrap_code = 'AD52'    "SCRATCHES FROM MACHINE
+         LEFT OUTER JOIN zaddtr_scrap AS e16 ON e16~rueck = zconf_other~rueck
+                                          AND e16~rmzhl = zconf_other~rmzhl
+                                          AND e16~scrap_code = 'AD53'    "GEOMETRY OF MACHINING
+         LEFT OUTER JOIN zaddtr_scrap AS e17 ON e17~rueck = zconf_other~rueck
+                                          AND e17~rmzhl = zconf_other~rmzhl
+                                          AND e17~scrap_code = 'AD54'    "QUALITY OF MACHINING
+         LEFT OUTER JOIN zaddtr_scrap AS e18 ON e18~rueck = zconf_other~rueck
+                                          AND e18~rmzhl = zconf_other~rmzhl
+                                          AND e18~scrap_code = 'AD55'    "WRONG MARKING
+         LEFT OUTER JOIN zaddtr_scrap AS e19 ON e19~rueck = zconf_other~rueck
+                                          AND e19~rmzhl = zconf_other~rmzhl
+                                          AND e19~scrap_code = 'AD57'    "Test
+         LEFT OUTER JOIN zaddtr_scrap AS e20 ON e20~rueck = zconf_other~rueck
+                                          AND e20~rmzhl = zconf_other~rmzhl
+                                          AND e20~scrap_code = 'AD58'    "Other
+
+          INTO CORRESPONDING FIELDS OF @i_other
+           WHERE datum IN @s_datum AND
+                 arbpl IN @s_arbpl AND
+                 personel_g IN @s_pers AND
+                 zconf_other~isbd  IN @s_isbd AND                 "@se20200730
+                 zconf_other_v~logrp IN @s_shift AND
+                 zconf_other_v~aufnr IN @s_aufnr AND
+                 afru~budat IN @s_budat                           "@se20210520
+         GROUP BY arbpl,
+                  datum,
+                  personel_g,
+                  zconf_other_v~logrp,
+                  zwagon_no,
+                  zcard_no,
+                  pc_cons_scrap,
+                  i_zcust_pack_no,
+                  i_reason_scrap_cons,
+**                  i_breaks,
+**                  i_anzma,
+                  i_name,
+                  i_surname,
+                  i_name2,
+                  i_surname2,
+                  i_name3,
+                  i_surname3,
+                  i_name4,
+                  i_surname4,
+                  i_name5,
+**                  zconf_other~rueck,
+**                  zconf_other~rmzhl,
+                  i_surname5,
+                  zconf_other_v~aufnr,
+                  afru~budat,           "@se20210520
+*                  z~charg,
+                  zconf_other~text,
+                  zconf_other~isbd,
+                  zconf_other~iebd.
+
+
+
+    "Fill Profile number and prod.length...
+    CLEAR lv_length.
+    CALL FUNCTION 'ZORDER_DATA'
+      EXPORTING
+        aufnr       = i_other-aufnr
+        screen      = 'ADD&PACK'
+        arbpl       = i_other-arbpl
+      IMPORTING
+        profile     = i_other-zprnum
+        prod_length = lv_length.
+
+    i_other-prod_length = lv_length.
+
+**    clear zconf_adr_tr.
+**    select single * from zconf_adr_tr
+**                    where aufnr = wa_other-aufnr
+**                      and rueck = wa_other-rueck
+**                      and rmzhl = wa_other-rmzhl.
+**    wa_other-quantity = zconf_adr_tr-pieces.
+    CLEAR lv_length.
+    CALL FUNCTION 'ZCOL_LENG_FROM_BATCH'
+      EXPORTING
+        charg  = i_other-charg
+      IMPORTING
+        length = lv_length.
+
+    i_other-cons_length = lv_length.
+    i_other-cons_length = i_other-cons_length * 1000.
+    i_other-prod_length = i_other-prod_length * 1000.
+**    append wa_other to i_other.
+
+    COLLECT i_other.
+  ENDSELECT.
+  " Fill scrap reasons
+
+**  perform fill_scrap_pcs.
+
+
+ENDFORM.                    " GET_DATA
+*&---------------------------------------------------------------------*
+*&      Form  PRINT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM print .
+
+  DATA: key_str(22)  TYPE c,
+        hkey_str(22) TYPE c.
+  SORT i_other BY arbpl
+                  datum
+                  personel_g
+                  logrp.
+
+  CLEAR: ind_other, ind_other[].
+  LOOP AT i_other INTO wa_other.
+    CONCATENATE wa_other-arbpl
+                wa_other-datum
+                wa_other-personel_g
+                wa_other-logrp
+                INTO key_str.
+
+    IF key_str <> hkey_str.
+      PERFORM print_page.
+      CLEAR: ind_other, ind_other[].
+    ENDIF.
+    APPEND wa_other  TO ind_other.
+    hkey_str = key_str.
+
+  ENDLOOP.
+
+  IF NOT ind_other[] IS INITIAL.
+    PERFORM print_page.
+  ENDIF.
+
+
+
+
+ENDFORM.                    " PRINT
+*&---------------------------------------------------------------------*
+*&      Form  PRINT_PAGE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM print_page .
+  CHECK NOT ind_other[] IS INITIAL.
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname = c_formname
+*     VARIANT  = ' '
+*     DIRECT_CALL              = ' '
+    IMPORTING
+      fm_name  = fm_name
+* EXCEPTIONS
+*     NO_FORM  = 1
+*     NO_FUNCTION_MODULE       = 2
+*     OTHERS   = 3
+    .
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  CALL FUNCTION fm_name
+* EXPORTING
+*   ARCHIVE_INDEX              =
+*   ARCHIVE_INDEX_TAB          =
+*   ARCHIVE_PARAMETERS         =
+*   CONTROL_PARAMETERS         =
+*   MAIL_APPL_OBJ              =
+*   MAIL_RECIPIENT             =
+*   MAIL_SENDER                =
+*   OUTPUT_OPTIONS             =
+*   USER_SETTINGS              = 'X'
+* IMPORTING
+*   DOCUMENT_OUTPUT_INFO       =
+*   JOB_OUTPUT_INFO            =
+*   JOB_OUTPUT_OPTIONS         =
+    TABLES
+      i_other          = ind_other "i_other
+    EXCEPTIONS
+      formatting_error = 1
+      internal_error   = 2
+      send_error       = 3
+      user_canceled    = 4
+      OTHERS           = 5.
+  IF sy-subrc <> 0.
+* MESSAGE ID SY-MSGID TYPE SY-MSGTY NUMBER SY-MSGNO
+*         WITH SY-MSGV1 SY-MSGV2 SY-MSGV3 SY-MSGV4.
+  ENDIF.
+ENDFORM.                    " PRINT_PAGE
+*&---------------------------------------------------------------------*
+*&      Form  SH_PERSONEL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM sh_personel USING assign.
+  DATA: BEGIN OF it_valuetab5 OCCURS 0,
+          zshift_g TYPE zshift_g,
+        END OF it_valuetab5,
+        it_rettab5 LIKE ddshretval OCCURS 0 WITH HEADER LINE.
+
+  CLEAR: it_valuetab5, it_valuetab5[],
+         it_rettab5, it_rettab5[].
+
+  SELECT * FROM zshift_group WHERE zscreen = 'ADD&PACK'.
+    it_valuetab5-zshift_g = zshift_group-zshift_g.
+    APPEND it_valuetab5.
+  ENDSELECT.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+      retfield        = 'S_PERS'
+      value_org       = 'S'
+    TABLES
+      value_tab       = it_valuetab5
+      return_tab      = it_rettab5
+    EXCEPTIONS
+      parameter_error = 1
+      no_values_found = 2
+      OTHERS          = 3.
+
+  READ TABLE it_rettab5 INDEX 1.
+  IF assign = 'LOW'.
+    s_pers-low = it_rettab5-fieldval.
+  ELSE.
+    s_pers-high = it_rettab5-fieldval.
+  ENDIF.
+
+ENDFORM.                    " SH_PERSONEL
+*&---------------------------------------------------------------------*
+*&      Form  SH_ARBPL
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_0082   text
+*----------------------------------------------------------------------*
+FORM sh_arbpl  USING  assign.
+  DATA: BEGIN OF it_valuetab2 OCCURS 0,
+          arbpl LIKE crhd-arbpl,
+          ktext LIKE crtx-ktext,
+        END OF it_valuetab2,
+        it_rettab2 LIKE ddshretval OCCURS 0 WITH HEADER LINE.
+
+  CLEAR: it_valuetab2, it_valuetab2[],
+         it_rettab2, it_rettab2[].
+
+  SELECT * FROM zcrhd WHERE spras eq 'EN' and werks = 8210.
+*                         OR veran = '006'
+*                         OR veran = '007'
+*                         OR veran = '008'.
+
+    it_valuetab2-arbpl = zcrhd-arbpl.
+    it_valuetab2-ktext = zcrhd-ktext.
+
+    APPEND it_valuetab2.
+
+  ENDSELECT.
+
+  CALL FUNCTION 'F4IF_INT_TABLE_VALUE_REQUEST'
+    EXPORTING
+*     ddic_structure  = 'ZCRHD_SH'
+      retfield        = 'ARBPL'
+      value_org       = 'S'
+    TABLES
+      value_tab       = it_valuetab2
+      return_tab      = it_rettab2
+    EXCEPTIONS
+      parameter_error = 1
+      no_values_found = 2
+      OTHERS          = 3.
+
+  READ TABLE it_rettab2 INDEX 1.
+  IF assign = 'LOW'.
+    s_arbpl-low  = it_rettab2-fieldval.
+  ELSE.
+    s_arbpl-high  = it_rettab2-fieldval.
+  ENDIF.
+
+ENDFORM.                    " SH_ARBPL
+*&---------------------------------------------------------------------*
+*&      Form  FILL_SCRAP_PCS
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM fill_scrap_pcs .
+  DATA: wtabix LIKE sy-tabix.
+  LOOP AT i_other INTO wa_other.
+    wtabix = sy-tabix.
+    CLEAR zaddtr_scrap.
+    SELECT * FROM zaddtr_scrap
+                    WHERE rueck = wa_other-rueck
+                      AND rmzhl = wa_other-rmzhl.
+
+      CASE zaddtr_scrap-scrap_code.
+        WHEN 'AD11'.
+          wa_other-scrap_01 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD12'.
+          wa_other-scrap_02 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD13'.
+          wa_other-scrap_03 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD14'.
+          wa_other-scrap_04 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD15'.
+          wa_other-scrap_05 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD16'.
+          wa_other-scrap_06 = zaddtr_scrap-scrap_pc.
+        WHEN 'AD17'.
+          wa_other-scrap_07 = zaddtr_scrap-scrap_pc.
+*        WHEN 'AD18'.
+*          wa_other-scrap_08 = zaddtr_scrap-scrap_pc.
+*        WHEN 'AD19'.
+*          wa_other-scrap_test = zaddtr_scrap-scrap_pc.
+          WHEN 'AD01'.                                      "Ju>>>>>>>>>
+           wa_other-scrap_09 = zaddtr_scrap-scrap_pc.
+
+          WHEN 'AD58'.                                     "Ju
+          wa_other-scrap_08 = zaddtr_scrap-scrap_pc.
+          WHEN 'AD57'.
+          wa_other-scrap_test = zaddtr_scrap-scrap_pc.     "Ju
+
+      ENDCASE.
+    ENDSELECT.
+    MODIFY i_other FROM wa_other INDEX wtabix.
+  ENDLOOP.
+
+ENDFORM.                    " FILL_SCRAP_PCS
+*&---------------------------------------------------------------------*
+*&      Form  GET_DATA_OLD
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM get_data_old .
+  DATA: lv_length TYPE zlength.
+  DATA: vb_vbeln  LIKE vbfa-vbeln.  "@se20210513
+  CLEAR: i_other, i_other[].
+
+  SELECT arbpl,
+         datum,
+         personel_g,
+         zconf_other_v~logrp,
+         zwagon_no,
+         zcard_no,
+         pcs_ok,
+         pc_cons_scrap,
+         i_zcust_pack_no,
+         pc_mf_scrap AS nscrap_total,
+         zconf_other~isbz AS i_start_time,
+         zconf_other~iebz AS i_end_time,
+         i_reason_scrap_cons,
+         i_breaks,
+         i_anzma,
+         i_name,
+         i_surname,
+         i_name2,
+         i_surname2,
+         i_name3,
+         i_surname3,
+         i_name4,
+         i_surname4,
+         i_name5,
+         i_surname5,
+         zconf_other_v~aufnr,
+         zconf_other~rueck,
+         zconf_other~rmzhl,
+         zconf_other~text,
+         zconf_other~zhu,
+         afru~budat,       "@se20210520
+      "Ju>>>
+         CASE WHEN e1~scrap_pc <> '0000' THEN CAST( e1~scrap_pc AS DEC ) END  AS scrap_01,
+         CASE WHEN e2~scrap_pc <> '0000' THEN CAST( e2~scrap_pc AS DEC ) END  AS scrap_02,
+         CASE WHEN e3~scrap_pc <> '0000' THEN CAST( e3~scrap_pc AS DEC ) END  AS scrap_3,
+         CASE WHEN e4~scrap_pc <> '0000' THEN CAST( e4~scrap_pc AS DEC ) END  AS scrap_4,
+         CASE WHEN e5~scrap_pc <> '0000' THEN CAST( e5~scrap_pc AS DEC ) END  AS scrap_5,
+         CASE WHEN e6~scrap_pc <> '0000' THEN CAST( e6~scrap_pc AS DEC ) END  AS scrap_6,
+         CASE WHEN e7~scrap_pc <> '0000' THEN CAST( e7~scrap_pc AS DEC ) END  AS scrap_7,
+         CASE WHEN e8~scrap_pc <> '0000' THEN CAST( e8~scrap_pc AS DEC ) END  AS scrap_8,
+         CASE WHEN e9~scrap_pc <> '0000' THEN CAST( e9~scrap_pc AS DEC ) END  AS scrap_9,
+         CASE WHEN e10~scrap_pc <> '0000' THEN CAST( e10~scrap_pc AS DEC ) END  AS scrap_10,
+         CASE WHEN e11~scrap_pc <> '0000' THEN CAST( e11~scrap_pc AS DEC ) END  AS scrap_11,
+         CASE WHEN e12~scrap_pc <> '0000' THEN CAST( e12~scrap_pc AS DEC ) END  AS scrap_12,
+         CASE WHEN e13~scrap_pc <> '0000' THEN CAST( e13~scrap_pc AS DEC ) END  AS scrap_13,
+         CASE WHEN e14~scrap_pc <> '0000' THEN CAST( e14~scrap_pc AS DEC ) END  AS scrap_14,
+         CASE WHEN e15~scrap_pc <> '0000' THEN CAST( e15~scrap_pc AS DEC ) END  AS scrap_15,
+         CASE WHEN e16~scrap_pc <> '0000' THEN CAST( e16~scrap_pc AS DEC ) END  AS scrap_16,
+         CASE WHEN e17~scrap_pc <> '0000' THEN CAST( e17~scrap_pc AS DEC ) END  AS scrap_17,
+         CASE WHEN e18~scrap_pc <> '0000' THEN CAST( e18~scrap_pc AS DEC ) END  AS scrap_18,
+         CASE WHEN e19~scrap_pc <> '0000' THEN CAST( e19~scrap_pc AS DEC ) END  AS scrap_test,
+         CASE WHEN e20~scrap_pc <> '0000' THEN CAST( e20~scrap_pc AS DEC ) END  AS scrap_08
+        "JU<<<
+
+
+         FROM zconf_other
+         INNER JOIN zconf_other_v ON zconf_other_v~aufnr = zconf_other~aufnr
+                                 AND zconf_other_v~rueck = zconf_other~rueck
+                                 AND zconf_other_v~rmzhl = zconf_other~rmzhl
+
+         INNER JOIN afru ON afru~rueck = zconf_other~rueck              "@se20210520
+                        AND afru~rmzhl = zconf_other~rmzhl              "@se20210520
+
+         LEFT OUTER JOIN  zconf_adr_tr AS z ON z~aufnr = zconf_other~aufnr
+                                           AND z~rueck = zconf_other~rueck
+                                           AND z~rmzhl = zconf_other~rmzhl
+         "Ju >>>
+
+         LEFT OUTER JOIN zaddtr_scrap AS e1 ON e1~rueck = zconf_other~rueck
+                                          AND e1~rmzhl = zconf_other~rmzhl
+                                          AND e1~scrap_code = 'AD11'    "Shorter from EXTRUSION
+         LEFT OUTER JOIN zaddtr_scrap AS e2 ON e2~rueck = zconf_other~rueck
+                                          AND e2~rmzhl = zconf_other~rmzhl
+                                          AND e2~scrap_code = 'AD12'    "Longer from EXTRUSION
+         LEFT OUTER JOIN zaddtr_scrap AS e3 ON e3~rueck = zconf_other~rueck
+                                          AND e3~rmzhl = zconf_other~rmzhl
+                                          AND e3~scrap_code = 'AD01'    "BLISTERS
+         LEFT OUTER JOIN zaddtr_scrap AS e4 ON e4~rueck = zconf_other~rueck
+                                          AND e4~rmzhl = zconf_other~rmzhl
+                                          AND e4~scrap_code = 'AD02'    "BENDED
+         LEFT OUTER JOIN zaddtr_scrap AS e5 ON e5~rueck = zconf_other~rueck
+                                          AND e5~rmzhl = zconf_other~rmzhl
+                                          AND e5~scrap_code = 'AD06'    "TRANSVERSAL SCRATCH
+         LEFT OUTER JOIN zaddtr_scrap AS e6 ON e6~rueck = zconf_other~rueck
+                                          AND e6~rmzhl = zconf_other~rmzhl
+                                          AND e6~scrap_code = 'AD07'    "LONGITUDINAL SCRATCH
+         LEFT OUTER JOIN zaddtr_scrap AS e7 ON e7~rueck = zconf_other~rueck
+                                          AND e7~rmzhl = zconf_other~rmzhl
+                                          AND e7~scrap_code = 'AD08'    "TEARINGS
+         LEFT OUTER JOIN zaddtr_scrap AS e8 ON e8~rueck = zconf_other~rueck
+                                          AND e8~rmzhl = zconf_other~rmzhl
+                                          AND e8~scrap_code = 'AD09'    "DENTS
+         LEFT OUTER JOIN zaddtr_scrap AS e9 ON e9~rueck = zconf_other~rueck
+                                          AND e9~rmzhl = zconf_other~rmzhl
+                                          AND e9~scrap_code = 'AD10'    "TWISTED
+         LEFT OUTER JOIN zaddtr_scrap AS e10 ON e10~rueck = zconf_other~rueck
+                                          AND e10~rmzhl = zconf_other~rmzhl
+                                          AND e10~scrap_code = 'AD20'    "WAVES
+         LEFT OUTER JOIN zaddtr_scrap AS e11 ON e11~rueck = zconf_other~rueck
+                                          AND e11~rmzhl = zconf_other~rmzhl
+                                          AND e11~scrap_code = 'AD21'    "CROSS-SECTION/GEOMETRY
+         LEFT OUTER JOIN zaddtr_scrap AS e12 ON e12~rueck = zconf_other~rueck
+                                          AND e12~rmzhl = zconf_other~rmzhl
+                                          AND e12~scrap_code = 'AD22'    "PICK-UPS
+         LEFT OUTER JOIN zaddtr_scrap AS e13 ON e13~rueck = zconf_other~rueck
+                                          AND e13~rmzhl = zconf_other~rmzhl
+                                          AND e13~scrap_code = 'AD50'    "SHORTER FROM CUTTING
+         LEFT OUTER JOIN zaddtr_scrap AS e14 ON e14~rueck = zconf_other~rueck
+                                          AND e14~rmzhl = zconf_other~rmzhl
+                                          AND e14~scrap_code = 'AD51'    "LONGER FROM CUTTING
+         LEFT OUTER JOIN zaddtr_scrap AS e15 ON e15~rueck = zconf_other~rueck
+                                          AND e15~rmzhl = zconf_other~rmzhl
+                                          AND e15~scrap_code = 'AD52'    "SCRATCHES FROM MACHINE
+         LEFT OUTER JOIN zaddtr_scrap AS e16 ON e16~rueck = zconf_other~rueck
+                                          AND e16~rmzhl = zconf_other~rmzhl
+                                          AND e16~scrap_code = 'AD53'    "GEOMETRY OF MACHINING
+         LEFT OUTER JOIN zaddtr_scrap AS e17 ON e17~rueck = zconf_other~rueck
+                                          AND e17~rmzhl = zconf_other~rmzhl
+                                          AND e17~scrap_code = 'AD54'    "QUALITY OF MACHINING
+         LEFT OUTER JOIN zaddtr_scrap AS e18 ON e18~rueck = zconf_other~rueck
+                                          AND e18~rmzhl = zconf_other~rmzhl
+                                          AND e18~scrap_code = 'AD55'    "WRONG MARKING
+         LEFT OUTER JOIN zaddtr_scrap AS e19 ON e19~rueck = zconf_other~rueck
+                                          AND e19~rmzhl = zconf_other~rmzhl
+                                          AND e19~scrap_code = 'AD57'    "Test
+         LEFT OUTER JOIN zaddtr_scrap AS e20 ON e20~rueck = zconf_other~rueck
+                                          AND e20~rmzhl = zconf_other~rmzhl
+                                          AND e20~scrap_code = 'AD58'    "Other
+ "<<< Ju
+
+
+           INTO CORRESPONDING FIELDS OF @wa_other
+           WHERE datum IN @s_datum AND
+                 arbpl IN @s_arbpl AND
+                 personel_g IN @s_pers AND
+                 zconf_other_v~logrp IN @s_shift AND
+                 zconf_other_v~aufnr IN @s_aufnr AND
+                 zconf_other~zhu     IN @s_hu    AND    "@se20210513
+                 afru~budat          IN @s_budat.       "@se20210520
+
+    PACK wa_other-nscrap_total TO wa_other-scrap_total.
+    "Fill Profile number and prod.length...
+    CLEAR lv_length.
+    CALL FUNCTION 'ZORDER_DATA'
+      EXPORTING
+        aufnr       = wa_other-aufnr
+        screen      = 'ADD&PACK'
+        arbpl       = wa_other-arbpl
+      IMPORTING
+        profile     = wa_other-zprnum
+        prod_length = lv_length.
+
+    wa_other-prod_length = lv_length.
+    CLEAR zconf_adr_tr.
+    SELECT SINGLE * FROM zconf_adr_tr
+                   WHERE aufnr = wa_other-aufnr
+                     AND rueck = wa_other-rueck
+                     AND rmzhl = wa_other-rmzhl.
+    wa_other-quantity = zconf_adr_tr-pieces.
+
+    CLEAR lv_length.
+    CALL FUNCTION 'ZCOL_LENG_FROM_BATCH'
+      EXPORTING
+        charg  = zconf_adr_tr-charg
+      IMPORTING
+        length = lv_length.
+
+    wa_other-cons_length = lv_length.
+    wa_other-cons_length = wa_other-cons_length * 1000.
+    wa_other-prod_length = wa_other-prod_length * 1000.
+
+    " @se20210429 >>>>
+    SELECT SINGLE * FROM aufk where aufnr = wa_other-aufnr.
+
+    SELECT SINGLE batch FROM zcard_furn_data INTO wa_other-lot_no
+      WHERE zcard_no = wa_other-zcard_no.
+
+    SELECT SINGLE vbeln_gen FROM vekp INTO wa_other-vbeln
+      WHERE exidv = wa_other-zhu AND werks = aufk-WERKS.
+
+*    SELECT SINGLE vbeln FROM vepo INTO wa_other-vbeln
+*       WHERE venum = vekp-venum.
+
+    SELECT SINGLE wadat_ist FROM likp INTO wa_other-wadat_ist
+      WHERE vbeln = wa_other-vbeln.
+
+    CLEAR vb_vbeln. "Invoice Number
+    SELECT * FROM vbfa
+      WHERE vbelv = wa_other-vbeln AND vbtyp_n = 'M'.
+
+      IF vb_vbeln IS INITIAL.
+        vb_vbeln = vbfa-vbeln.
+      ELSE.
+        IF vbfa-vbeln > vb_vbeln .
+          vb_vbeln = vbfa-vbeln.
+        ENDIF.
+      ENDIF.
+    ENDSELECT.
+
+    IF vb_vbeln IS NOT INITIAL.
+      SELECT SINGLE xblnr FROM bkpf INTO wa_other-xblnr
+        WHERE awkey = vb_vbeln.
+    ENDIF.
+    " <<<<
+
+    APPEND wa_other TO i_other.
+  ENDSELECT.
+
+  " Fill scrap reasons
+  PERFORM fill_scrap_pcs.
+
+ENDFORM.
